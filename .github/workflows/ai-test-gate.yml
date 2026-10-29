@@ -1,0 +1,57 @@
+# Runs the usual static analysis (Sonar) and the AI test gate side by side.
+# Sonar checks the code. The AI test gate checks what the model actually says.
+name: quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  sonar:
+    runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Sonar scan
+        if: env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarqube-scan-action@v8
+      - name: Sonar not configured
+        if: env.SONAR_TOKEN == ''
+        run: echo "Set SONAR_TOKEN (and SONAR_HOST_URL for SonarQube Server) to enable the Sonar scan."
+
+  ai-test-gate:
+    runs-on: ubuntu-latest
+    env:
+      # Each case runs this many times: one run proves nothing about an AI.
+      REPEAT: "5"
+      # Leave empty to use the free mock model. For a real model see README.
+      PROMPTFOO_PROVIDERS: ${{ vars.PROMPTFOO_PROVIDERS }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      PROMPTFOO_DISABLE_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Run AI tests
+        run: |
+          ARGS="--repeat $REPEAT --no-cache -o results.json"
+          if [ -n "$PROMPTFOO_PROVIDERS" ]; then ARGS="$ARGS --providers $PROMPTFOO_PROVIDERS"; fi
+          # promptfoo exits non-zero when any single run fails; the gate below decides.
+          npx --yes promptfoo@0.125.1 eval $ARGS || true
+      - name: Gate on pass rates
+        run: python3 scripts/gate.py results.json --min-pass-rate 0.90 --min-case-pass-rate 0.60
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ai-test-results
+          path: results.json

@@ -1,0 +1,9 @@
+# A model you run yourself, behind any OpenAI-compatible API:
+# llama.cpp (llama-server), vLLM or Ollama.
+# Use with: --providers file://providers/local-openai-compatible.yaml
+id: openai:chat:local-model
+label: local-model
+config:
+  apiBaseUrl: http://localhost:8080/v1
+  apiKey: not-needed
+  temperature: 0

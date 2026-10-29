@@ -1,0 +1,24 @@
+# AI test gate -- promptfoo configuration.
+# Default provider is a deliberately unreliable mock model, so the gate can be
+# tried with no API key and no cost. Swap in a real model with --providers
+# (see README).
+description: Support-ticket triage -- AI test gate
+
+prompts:
+  - file://prompts/triage.txt
+
+providers:
+  - id: file://providers/mock_model.py
+    label: mock-model
+
+# Checks applied to every test case: the reply must be valid JSON in the agreed shape.
+defaultTest:
+  assert:
+    - type: is-json
+    - type: javascript
+      value: |
+        const r = JSON.parse(output);
+        return ['billing', 'technical', 'account', 'other'].includes(r.category)
+            && ['low', 'medium', 'high'].includes(r.priority);
+
+tests: file://tests/triage.yaml

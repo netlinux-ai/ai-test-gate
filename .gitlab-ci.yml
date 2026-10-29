@@ -1,0 +1,38 @@
+# Runs the usual static analysis (Sonar) and the AI test gate side by side.
+# Sonar checks the code. The AI test gate checks what the model actually says.
+stages:
+  - test
+
+sonar:
+  stage: test
+  image:
+    name: sonarsource/sonar-scanner-cli:latest
+    entrypoint: [""]
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - sonar-scanner
+  rules:
+    - if: $SONAR_TOKEN
+
+ai-test-gate:
+  stage: test
+  image: node:22
+  variables:
+    # Each case runs this many times: one run proves nothing about an AI.
+    REPEAT: "5"
+    PROMPTFOO_DISABLE_TELEMETRY: "1"
+    # Set PROMPTFOO_PROVIDERS (and the model's API key) as CI/CD variables for a
+    # real model; leave unset to use the free mock model.
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq python3 > /dev/null
+  script:
+    - ARGS="--repeat $REPEAT --no-cache -o results.json"
+    - if [ -n "$PROMPTFOO_PROVIDERS" ]; then ARGS="$ARGS --providers $PROMPTFOO_PROVIDERS"; fi
+    # promptfoo exits non-zero when any single run fails; the gate decides.
+    - npx --yes promptfoo@0.125.1 eval $ARGS || true
+    - python3 scripts/gate.py results.json --min-pass-rate 0.90 --min-case-pass-rate 0.60
+  artifacts:
+    when: always
+    paths:
+      - results.json
